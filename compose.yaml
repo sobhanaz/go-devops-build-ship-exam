@@ -1,0 +1,51 @@
+# MiniBank: API + PostgreSQL.
+#   cp .env.example .env        # then edit the password
+#   docker compose up -d --build
+#   scripts/smoke.sh http://localhost:8080
+# Values come from .env; the defaults below only exist so that
+# `docker compose config` also works in a fresh clone without .env.
+name: minibank
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-minibank}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      POSTGRES_DB: ${POSTGRES_DB:-minibank}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # $$ escapes compose interpolation: the variables are expanded inside the container.
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+    # No "ports:" on purpose: only the app can reach the database, over the
+    # private compose network.
+
+  app:
+    build: .
+    image: minibank:v1
+    environment:
+      PORT: "8080"
+      STORE: postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-minibank}:${POSTGRES_PASSWORD:-change-me}@db:5432/${POSTGRES_DB:-minibank}?sslmode=disable
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/minibank", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  # Named volume: data survives `docker compose down` (but not `down -v`).
+  pgdata:
