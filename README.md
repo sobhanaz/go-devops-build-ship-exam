@@ -64,6 +64,9 @@ claim and the click increment are atomic; Delete is a `MULTI` with `DEL` + `ZREM
 
 ## Run it
 
+Needs Go 1.22+ (the `go` line in go.mod; Go 1.26 recommended), plus Docker,
+kubectl and kind or minikube for the later steps (`scripts/check-env.sh` checks).
+
 ### 1. Locally with the in-memory store (no Redis needed)
 
 ```bash
@@ -89,6 +92,10 @@ docker compose down               # data survives in the redis-data volume (no -
 
 Redis has a healthcheck (`redis-cli ping`), the app waits for it with
 `condition: service_healthy`, and the Redis port is not published to the host.
+
+The image is a multi-stage build (`golang:1.25-alpine` builder → `scratch`,
+static binary, UID 65532): about 10 MB (10.2 MB measured). Quick test without
+Redis: `docker run --rm -e STORE=memory -p 8080:8080 snaplink:v1`.
 
 ### 4. Kubernetes with kind
 
