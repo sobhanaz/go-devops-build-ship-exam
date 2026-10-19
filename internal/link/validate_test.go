@@ -75,3 +75,26 @@ func TestValidateCode(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateTTL(t *testing.T) {
+	tests := []struct {
+		seconds int64
+		wantErr bool
+	}{
+		{1, false},
+		{3600, false},
+		{MaxTTLSeconds, false},
+		{0, true},
+		{-1, true},
+		{MaxTTLSeconds + 1, true},
+	}
+	for _, tt := range tests {
+		err := ValidateTTL(tt.seconds)
+		if tt.wantErr && !errors.Is(err, ErrInvalidTTL) {
+			t.Errorf("ValidateTTL(%d) = %v, want ErrInvalidTTL", tt.seconds, err)
+		}
+		if !tt.wantErr && err != nil {
+			t.Errorf("ValidateTTL(%d) = %v, want nil", tt.seconds, err)
+		}
+	}
+}

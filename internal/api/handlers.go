@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -33,13 +35,20 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 }
 
 type createRequest struct {
-	URL  string `json:"url"`
-	Code string `json:"code"`
+	URL        string `json:"url"`
+	Code       string `json:"code"`
+	TTLSeconds *int64 `json:"ttl_seconds"` // pointer: absent ≠ 0
 }
 
 func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 	var req createRequest
 	if err := decodeJSON(w, r, &req); err != nil {
+		// 1.5 or "10" for ttl_seconds fail inside json decoding; give them
+		// the TTL error message rather than a generic JSON one.
+		var typeErr *json.UnmarshalTypeError
+		if errors.As(err, &typeErr) && typeErr.Field == "ttl_seconds" {
+			err = fmt.Errorf("%w: must be a whole number of seconds", link.ErrInvalidTTL)
+		}
 		s.writeError(w, r, err)
 		return
 	}
@@ -55,12 +64,22 @@ func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.TTLSeconds != nil {
+		if err := link.ValidateTTL(*req.TTLSeconds); err != nil {
+			s.writeError(w, r, err)
+			return
+		}
+	}
 
 	l := link.Link{
 		URL: req.URL,
 		// Millisecond precision on purpose: the Redis ZSET score is unix ms,
 		// so equal scores always mean equal created_at (stable ordering).
 		CreatedAt: s.now().UTC().Truncate(time.Millisecond),
+	}
+	if req.TTLSeconds != nil {
+		exp := l.CreatedAt.Add(time.Duration(*req.TTLSeconds) * time.Second)
+		l.ExpiresAt = &exp
 	}
 	created, err := s.create(r.Context(), l, req.Code)
 	if err != nil {

@@ -10,6 +10,7 @@ const (
 	MaxURLLength  = 2048
 	MinCodeLength = 3
 	MaxCodeLength = 32
+	MaxTTLSeconds = 365 * 24 * 60 * 60 // 31536000 = one year
 )
 
 // reserved are first path segments the service itself uses. A custom code with
@@ -65,6 +66,14 @@ func ValidateCode(code string) error {
 	}
 	if IsReserved(code) {
 		return fmt.Errorf("%w: %q is reserved", ErrInvalidCode, code)
+	}
+	return nil
+}
+
+// ValidateTTL checks ttl_seconds: a whole number from 1 to one year.
+func ValidateTTL(seconds int64) error {
+	if seconds < 1 || seconds > MaxTTLSeconds {
+		return fmt.Errorf("%w: must be between 1 and %d", ErrInvalidTTL, MaxTTLSeconds)
 	}
 	return nil
 }

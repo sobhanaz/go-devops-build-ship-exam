@@ -15,14 +15,21 @@ var (
 	ErrInvalidCode = errors.New("invalid code")
 	ErrCodeTaken   = errors.New("code already taken")
 	ErrNotFound    = errors.New("link not found")
+	ErrInvalidTTL  = errors.New("invalid ttl_seconds")
 )
 
 // Link is one short link. ShortURL is not stored: it depends on BASE_URL and
 // is filled in by the API layer right before the link is written as JSON.
 type Link struct {
-	Code      string    `json:"code"`
-	URL       string    `json:"url"`
-	ShortURL  string    `json:"short_url"`
-	Clicks    int64     `json:"clicks"`
-	CreatedAt time.Time `json:"created_at"`
+	Code      string     `json:"code"`
+	URL       string     `json:"url"`
+	ShortURL  string     `json:"short_url"`
+	Clicks    int64      `json:"clicks"`
+	CreatedAt time.Time  `json:"created_at"`
+	ExpiresAt *time.Time `json:"expires_at,omitempty"` // nil = never expires
+}
+
+// Expired reports whether the link has a TTL that has run out at now.
+func (l Link) Expired(now time.Time) bool {
+	return l.ExpiresAt != nil && !now.Before(*l.ExpiresAt)
 }
