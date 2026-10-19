@@ -1,0 +1,19 @@
+# binaries
+/snaplink
+/bin/
+*.exe
+*.test
+
+# coverage / profiles
+*.out
+coverage.*
+*.prof
+
+# local config and secrets
+.env
+*.local
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
