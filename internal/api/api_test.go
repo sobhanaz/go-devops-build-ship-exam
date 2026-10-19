@@ -252,6 +252,7 @@ func TestRoutePrecedence(t *testing.T) {
 	}{
 		{"GET", "/healthz", 200, `"ok"`},
 		{"GET", "/readyz", 200, `"ready"`},
+		{"GET", "/metrics", 200, `# TYPE`},
 		{"GET", "/api/links", 200, `[`},
 		{"GET", "/api", 404, `link not found`}, // one segment → redirect handler, reserved so never a link
 		{"GET", "/api/links/xyz", 404, `link not found`},
