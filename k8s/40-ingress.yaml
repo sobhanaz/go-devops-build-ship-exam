@@ -1,0 +1,21 @@
+# Bonus B2: http://minibank.local → Service minibank:80.
+# Needs the ingress-nginx controller and "127.0.0.1 minibank.local" in
+# /etc/hosts (see README, section Kubernetes → Ingress).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: minibank
+  namespace: minibank
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: minibank.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: minibank
+                port:
+                  number: 80
