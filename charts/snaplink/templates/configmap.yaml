@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "snaplink.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "snaplink.labels" . | nindent 4 }}
+data:
+  STORE: redis
+  REDIS_ADDR: {{ printf "%s-redis:6379" (include "snaplink.fullname" .) | quote }}
+  PORT: {{ .Values.config.port | quote }}
+  BASE_URL: {{ .Values.config.baseURL | quote }}

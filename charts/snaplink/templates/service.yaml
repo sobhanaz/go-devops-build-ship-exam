@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "snaplink.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "snaplink.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "snaplink.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
