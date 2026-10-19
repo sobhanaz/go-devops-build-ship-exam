@@ -1,0 +1,98 @@
+# MiniBank API: Deployment (2 replicas) + Service (port 80 → 8080).
+# Image is built locally and loaded into the cluster:
+#   docker build -t minibank:v1 . && kind load docker-image minibank:v1
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: minibank
+  namespace: minibank
+  labels:
+    app: minibank
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: minibank
+  template:
+    metadata:
+      labels:
+        app: minibank
+    spec:
+      # Longer than the app's own 10 s shutdown timeout, so in-flight
+      # requests can finish after SIGTERM.
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: minibank
+          image: minibank:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: minibank-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: minibank-secret
+                  key: DATABASE_URL
+          # Startup: the app connects to Postgres (with retries) before it starts
+          # listening. On a fresh `kubectl apply` Postgres can take ~30-60 s, so
+          # give the app up to 30 x 2 s before liveness is allowed to restart it.
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 2
+            failureThreshold: 30
+          # Liveness: is the process alive? /healthz never touches the DB, so
+          # a database outage does NOT restart the app pods.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 3
+          # Readiness: can it serve? /readyz pings Postgres; while the DB is
+          # down the pod only leaves the Service endpoints.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3 # longer than the app's 2 s DB ping timeout
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: minibank
+  namespace: minibank
+  labels:
+    app: minibank
+spec:
+  type: ClusterIP
+  selector:
+    app: minibank
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080
