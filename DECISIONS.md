@@ -43,7 +43,7 @@ green without a DB, smoke.sh green on compose and on kind.
   committed; K8s Secret via `secretKeyRef`. The URL is never logged.
 - `http.MaxBytesReader` 1 MB, server timeouts (ReadHeaderTimeout etc.).
 - 500s log the detail but return only `{"error":"internal error"}`.
-- Container: static binary on distroless, `USER 65532`, read-only root FS in K8s.
+- Container: static binary on `scratch`, `USER 65532`, read-only root FS in K8s.
 - DB port not published in compose; ClusterIP in K8s.
 
 ## OUT OF SCOPE
