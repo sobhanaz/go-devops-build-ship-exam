@@ -140,6 +140,11 @@ func TestCreateLinkBadRequest(t *testing.T) {
 		{"code too long", `{"url":"https://go.dev","code":"` + strings.Repeat("a", 33) + `"}`},
 		// 400 wins over 409: the code is taken, but the url is invalid.
 		{"bad url with taken code", `{"url":"ftp://x","code":"taken"}`},
+		{"ttl zero", `{"url":"https://go.dev","ttl_seconds":0}`},
+		{"ttl negative", `{"url":"https://go.dev","ttl_seconds":-1}`},
+		{"ttl fraction", `{"url":"https://go.dev","ttl_seconds":1.5}`},
+		{"ttl string", `{"url":"https://go.dev","ttl_seconds":"10"}`},
+		{"ttl over one year", `{"url":"https://go.dev","ttl_seconds":31536001}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -151,6 +156,26 @@ func TestCreateLinkBadRequest(t *testing.T) {
 				t.Fatal(`want a non-empty "error" field`)
 			}
 		})
+	}
+}
+
+func TestCreateLinkWithTTL(t *testing.T) {
+	s, h := newTestServer(t)
+	s.now = func() time.Time { return time.Date(2026, 10, 20, 9, 30, 0, 0, time.UTC) }
+
+	rec := do(t, h, http.MethodPost, "/api/links", `{"url":"https://example.com/ttl","ttl_seconds":60}`)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d %s, want 201", rec.Code, rec.Body)
+	}
+	raw := decode[map[string]any](t, rec)
+	if raw["expires_at"] != "2026-10-20T09:31:00Z" {
+		t.Fatalf("expires_at = %v, want 2026-10-20T09:31:00Z", raw["expires_at"])
+	}
+
+	// Without a TTL the key is omitted entirely (omitempty on a pointer).
+	rec = do(t, h, http.MethodPost, "/api/links", `{"url":"https://example.com/forever"}`)
+	if _, ok := decode[map[string]any](t, rec)["expires_at"]; ok {
+		t.Fatal("expires_at present on a link without ttl")
 	}
 }
 

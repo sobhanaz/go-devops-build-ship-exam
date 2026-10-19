@@ -16,6 +16,7 @@ type Server struct {
 	store   store.Store
 	baseURL string
 	log     *slog.Logger
+	metrics *metrics
 	now     func() time.Time
 }
 
@@ -25,6 +26,7 @@ func New(st store.Store, baseURL string, logger *slog.Logger) *Server {
 		store:   st,
 		baseURL: strings.TrimRight(baseURL, "/"),
 		log:     logger,
+		metrics: newMetrics(),
 		now:     time.Now,
 	}
 }
@@ -36,15 +38,17 @@ func (s *Server) Handler() http.Handler {
 	// Go 1.22 ServeMux patterns. "GET /{code}" matches every one-segment path,
 	// but when two patterns match, ServeMux picks the MORE SPECIFIC one, so the
 	// literal /healthz and /readyz win. /api/links/... has more segments and
-	// can never reach the redirect handler. routes_test.go pins this down.
+	// can never reach the redirect handler. TestRoutePrecedence pins this down.
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
+	mux.Handle("GET /metrics", s.metrics.handler())
 	mux.HandleFunc("POST /api/links", s.createLink)
 	mux.HandleFunc("GET /api/links", s.listLinks)
 	mux.HandleFunc("GET /api/links/{code}", s.getLink)
 	mux.HandleFunc("DELETE /api/links/{code}", s.deleteLink)
 	mux.HandleFunc("GET /{code}", s.redirect)
 
-	// Outermost first: the logger sees the 500 written by the recoverer.
-	return s.logRequests(s.recoverPanics(mux))
+	// Outermost first: logger and metrics both see the 500 that the
+	// recoverer writes after a panic.
+	return s.logRequests(s.instrument(mux, s.recoverPanics(mux)))
 }

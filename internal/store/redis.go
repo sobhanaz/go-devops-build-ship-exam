@@ -14,8 +14,11 @@ import (
 
 // Key design:
 //
-//	link:{code}  HASH  url, clicks, created_at
+//	link:{code}  HASH  url, clicks, created_at[, expires_at]   (+ Redis TTL)
 //	links        ZSET  member = code, score = created_at in unix ms
+//
+// With a TTL, Redis deletes the hash by itself; the ZSET entry is removed
+// lazily by List (see unindexScript).
 const indexKey = "links"
 
 func linkKey(code string) string { return "link:" + code }
@@ -25,12 +28,17 @@ func linkKey(code string) string { return "link:" + code }
 // both see "free" and both get 201 (check-then-act race).
 //
 //	KEYS[1] = link:{code}  KEYS[2] = links
-//	ARGV    = code, url, created_at (RFC 3339), score (unix ms)
+//	ARGV    = code, url, created_at (RFC 3339), score (unix ms),
+//	          expires_at (RFC 3339 or ""), ttl in ms (or "")
 var createScript = redis.NewScript(`
 if redis.call('EXISTS', KEYS[1]) == 1 then
   return 0
 end
 redis.call('HSET', KEYS[1], 'url', ARGV[2], 'clicks', 0, 'created_at', ARGV[3])
+if ARGV[5] ~= '' then
+  redis.call('HSET', KEYS[1], 'expires_at', ARGV[5])
+  redis.call('PEXPIRE', KEYS[1], ARGV[6])
+end
 redis.call('ZADD', KEYS[2], ARGV[4], ARGV[1])
 return 1
 `)
@@ -52,6 +60,15 @@ redis.call('HINCRBY', KEYS[1], 'clicks', 1)
 return redis.call('HGET', KEYS[1], 'url')
 `)
 
+// unindexScript removes a code from the ZSET only if its hash is really gone.
+// A plain ZREM could race with a new link that re-uses the (now free) code.
+var unindexScript = redis.NewScript(`
+if redis.call('EXISTS', KEYS[1]) == 0 then
+  return redis.call('ZREM', KEYS[2], ARGV[1])
+end
+return 0
+`)
+
 // Redis is the production Store backed by a go-redis client.
 type Redis struct {
 	rdb *redis.Client
@@ -63,9 +80,17 @@ func NewRedis(rdb *redis.Client) *Redis {
 }
 
 func (s *Redis) Create(ctx context.Context, l link.Link) (link.Link, error) {
+	expiresAt, ttlMillis := "", ""
+	if l.ExpiresAt != nil {
+		expiresAt = l.ExpiresAt.UTC().Format(time.RFC3339Nano)
+		// Relative PEXPIRE (not PEXPIREAT) so clock skew between this pod
+		// and the Redis host cannot shorten or stretch the TTL.
+		ttlMillis = strconv.FormatInt(l.ExpiresAt.Sub(l.CreatedAt).Milliseconds(), 10)
+	}
 	ok, err := createScript.Run(ctx, s.rdb,
 		[]string{linkKey(l.Code), indexKey},
 		l.Code, l.URL, l.CreatedAt.UTC().Format(time.RFC3339Nano), l.CreatedAt.UnixMilli(),
+		expiresAt, ttlMillis,
 	).Int()
 	if err != nil {
 		return link.Link{}, fmt.Errorf("redis create: %w", err)
@@ -108,9 +133,11 @@ func (s *Redis) List(ctx context.Context) ([]link.Link, error) {
 		return nil, fmt.Errorf("redis list: %w", err)
 	}
 
+	var stale []string
 	for i, cmd := range cmds {
 		vals := cmd.Val()
-		if len(vals) == 0 {
+		if len(vals) == 0 { // expired: Redis already dropped the hash
+			stale = append(stale, codes[i])
 			continue
 		}
 		l, err := parseLink(codes[i], vals)
@@ -118,6 +145,12 @@ func (s *Redis) List(ctx context.Context) ([]link.Link, error) {
 			return nil, err
 		}
 		out = append(out, l)
+	}
+
+	// Lazy cleanup of the index. Best effort: if it fails, the entry is
+	// simply skipped again next time.
+	for _, code := range stale {
+		_ = unindexScript.Run(ctx, s.rdb, []string{linkKey(code), indexKey}, code).Err()
 	}
 	return out, nil
 }
@@ -167,5 +200,13 @@ func parseLink(code string, vals map[string]string) (link.Link, error) {
 	if err != nil {
 		return link.Link{}, fmt.Errorf("link %s: bad created_at: %w", code, err)
 	}
-	return link.Link{Code: code, URL: vals["url"], Clicks: clicks, CreatedAt: created}, nil
+	l := link.Link{Code: code, URL: vals["url"], Clicks: clicks, CreatedAt: created}
+	if v, ok := vals["expires_at"]; ok {
+		exp, err := time.Parse(time.RFC3339Nano, v)
+		if err != nil {
+			return link.Link{}, fmt.Errorf("link %s: bad expires_at: %w", code, err)
+		}
+		l.ExpiresAt = &exp
+	}
+	return l, nil
 }

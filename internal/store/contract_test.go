@@ -121,6 +121,37 @@ func runContract(t *testing.T, st Store) {
 		}
 	})
 
+	t.Run("expired link is gone everywhere and its code is free again", func(t *testing.T) {
+		l := newLink(t, st, "https://example.com/ttl")
+		exp := l.CreatedAt.Add(300 * time.Millisecond)
+		l.ExpiresAt = &exp
+		mustCreate(t, st, l)
+
+		got, err := st.Get(ctx, l.Code)
+		if err != nil || got.ExpiresAt == nil || !got.ExpiresAt.Equal(exp) {
+			t.Fatalf("Get before expiry = %+v, %v; want expires_at %v", got, err, exp)
+		}
+		if _, err := st.Hit(ctx, l.Code); err != nil {
+			t.Fatalf("Hit before expiry: %v", err)
+		}
+
+		time.Sleep(400 * time.Millisecond)
+		if _, err := st.Hit(ctx, l.Code); !errors.Is(err, link.ErrNotFound) {
+			t.Errorf("Hit after expiry err = %v, want ErrNotFound", err)
+		}
+		if _, err := st.Get(ctx, l.Code); !errors.Is(err, link.ErrNotFound) {
+			t.Errorf("Get after expiry err = %v, want ErrNotFound", err)
+		}
+		if containsCode(t, st, l.Code) {
+			t.Errorf("expired code %s still listed", l.Code)
+		}
+		fresh := l
+		fresh.ExpiresAt = nil
+		if _, err := st.Create(ctx, fresh); err != nil {
+			t.Errorf("re-using an expired code: %v", err)
+		}
+	})
+
 	// The click storm: 200 goroutines hit the SAME code. With a non-atomic
 	// read-modify-write some increments would be lost and clicks < 200.
 	t.Run("concurrent hits are all counted", func(t *testing.T) {

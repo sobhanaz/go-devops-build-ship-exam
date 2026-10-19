@@ -24,7 +24,8 @@ func statusFor(err error) int {
 	switch {
 	case errors.Is(err, errBadJSON),
 		errors.Is(err, link.ErrInvalidURL),
-		errors.Is(err, link.ErrInvalidCode):
+		errors.Is(err, link.ErrInvalidCode),
+		errors.Is(err, link.ErrInvalidTTL):
 		return http.StatusBadRequest
 	case errors.Is(err, link.ErrCodeTaken):
 		return http.StatusConflict
@@ -64,7 +65,7 @@ func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 		if errors.As(err, &tooBig) {
 			return fmt.Errorf("%w: body larger than 1 MB", errBadJSON)
 		}
-		return fmt.Errorf("%w: %v", errBadJSON, err)
+		return fmt.Errorf("%w: %w", errBadJSON, err) // keep err for errors.As
 	}
 	// Reject trailing garbage such as `{"url":"..."} xyz`.
 	if err := dec.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
