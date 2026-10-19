@@ -35,6 +35,23 @@ redis.call('ZADD', KEYS[2], ARGV[4], ARGV[1])
 return 1
 `)
 
+// hitScript counts a click and returns the url atomically.
+//
+// Why not just HINCRBY? HINCRBY on a missing key CREATES the hash, so a click
+// that arrives right after (or long after) a DELETE would resurrect a broken
+// link {clicks: 1}. And never HGET + HSET: two parallel requests would read
+// the same value and one click would be lost. The script runs as one atomic
+// step inside Redis, so EXISTS and HINCRBY cannot be interleaved.
+//
+//	KEYS[1] = link:{code}   returns url, or false (→ redis.Nil) if missing
+var hitScript = redis.NewScript(`
+if redis.call('EXISTS', KEYS[1]) == 0 then
+  return false
+end
+redis.call('HINCRBY', KEYS[1], 'clicks', 1)
+return redis.call('HGET', KEYS[1], 'url')
+`)
+
 // Redis is the production Store backed by a go-redis client.
 type Redis struct {
 	rdb *redis.Client
@@ -122,12 +139,8 @@ func (s *Redis) Delete(ctx context.Context, code string) error {
 }
 
 func (s *Redis) Hit(ctx context.Context, code string) (string, error) {
-	key := linkKey(code)
-	if err := s.rdb.HIncrBy(ctx, key, "clicks", 1).Err(); err != nil {
-		return "", fmt.Errorf("redis hit: %w", err)
-	}
-	url, err := s.rdb.HGet(ctx, key, "url").Result()
-	if errors.Is(err, redis.Nil) {
+	url, err := hitScript.Run(ctx, s.rdb, []string{linkKey(code)}).Text()
+	if errors.Is(err, redis.Nil) { // the script returned false: no such link
 		return "", link.ErrNotFound
 	}
 	if err != nil {
