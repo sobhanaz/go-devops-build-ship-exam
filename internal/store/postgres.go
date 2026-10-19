@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"minibank/internal/bank"
@@ -193,10 +195,12 @@ func (p *Postgres) Transfer(ctx context.Context, from, to, amount int64) (bank.T
 		return bank.Transaction{}, err
 	}
 	var t bank.Transaction
-	err := pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
-		var err error
-		t, err = transferTx(ctx, tx, from, to, amount)
-		return err
+	err := retryOnConflict(ctx, func() error {
+		return pgx.BeginFunc(ctx, p.pool, func(tx pgx.Tx) error {
+			var err error
+			t, err = transferTx(ctx, tx, from, to, amount)
+			return err
+		})
 	})
 	return t, err
 }
@@ -204,10 +208,13 @@ func (p *Postgres) Transfer(ctx context.Context, from, to, amount int64) (bank.T
 // transferTx runs inside ONE SQL transaction: both balance updates and the
 // ledger row are committed together, or (on any error) rolled back together.
 func transferTx(ctx context.Context, tx pgx.Tx, from, to, amount int64) (bank.Transaction, error) {
-	// Lock the sender, then the receiver, so nobody can change the balances
-	// while we check and update them.
+	// Lock both rows in ascending id order, never in from→to order.
+	// If transfer A→B locked A then B while B→A locked B then A, each would
+	// wait for the other forever and Postgres would abort one with a
+	// deadlock (SQLSTATE 40P01 → HTTP 500). With one global order the second
+	// transfer simply waits for the first to commit.
 	balances := make(map[int64]int64, 2)
-	for _, id := range []int64{from, to} {
+	for _, id := range []int64{min(from, to), max(from, to)} {
 		var balance int64
 		err := tx.QueryRow(ctx, `SELECT balance FROM accounts WHERE id = $1 FOR UPDATE`, id).Scan(&balance)
 		if err != nil {
@@ -278,6 +285,27 @@ func (p *Postgres) Close() { p.pool.Close() }
 func notFound(err error) error {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return bank.ErrAccountNotFound
+	}
+	return err
+}
+
+// retryOnConflict re-runs fn when Postgres aborted the transaction with a
+// deadlock (40P01) or a serialization failure (40001). With id-ordered
+// locking a deadlock should not happen at all; this is a safety net only.
+func retryOnConflict(ctx context.Context, fn func() error) error {
+	const attempts = 3
+	var err error
+	for i := range attempts {
+		err = fn()
+		var pgErr *pgconn.PgError
+		if !errors.As(err, &pgErr) || (pgErr.Code != "40P01" && pgErr.Code != "40001") {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(i+1) * 20 * time.Millisecond):
+		}
 	}
 	return err
 }
