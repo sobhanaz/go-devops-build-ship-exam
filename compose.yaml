@@ -1,0 +1,50 @@
+# SnapLink local stack: app + Redis.
+#   cp .env.example .env        # optional: your own password / ports
+#   docker compose up -d --build
+#   scripts/smoke.sh http://localhost:8080
+# Values come from .env (gitignored). The ":-" fallbacks only exist so a
+# fresh clone starts without extra steps — never use them outside a laptop.
+name: snaplink
+
+services:
+  redis:
+    image: redis:7-alpine
+    # The password is read from the container env, not written in this file.
+    command: ["sh", "-c", "exec redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-dev-only-change-me}
+    volumes:
+      - redis-data:/data # AOF + RDB files survive `docker compose down` (without -v)
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli --no-auth-warning -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+    # No "ports:" on purpose: Redis is only reachable inside the compose network.
+
+  app:
+    build: .
+    image: snaplink:v1
+    environment:
+      STORE: redis
+      REDIS_ADDR: redis:6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-dev-only-change-me}
+      BASE_URL: ${BASE_URL:-http://localhost:8080}
+      PORT: "8080"
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    depends_on:
+      redis:
+        condition: service_healthy # wait for PONG, not just "container started"
+    healthcheck:
+      test: ["CMD", "/snaplink", "-healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  redis-data:
