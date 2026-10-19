@@ -16,7 +16,7 @@ COPY . .
 # -s -w strips the symbol table and DWARF info → much smaller binary.
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/snaplink ./cmd/snaplink
 
-# ---- runtime stage: just the binary (~8 MB image) ----
+# ---- runtime stage: just the binary (~10 MB image, 10.2 MB measured) ----
 # scratch has no shell, no CA bundle and no tzdata. SnapLink makes no outbound
 # TLS calls and only uses UTC, so it needs none of them.
 FROM scratch
