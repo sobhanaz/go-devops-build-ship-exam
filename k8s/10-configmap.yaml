@@ -1,0 +1,11 @@
+# Non-secret configuration. The app reads it with envFrom.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: minibank-config
+  namespace: minibank
+data:
+  PORT: "8080"
+  STORE: "postgres"
+  POSTGRES_DB: "minibank"
+  POSTGRES_USER: "minibank"
