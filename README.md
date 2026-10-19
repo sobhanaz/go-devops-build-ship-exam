@@ -101,6 +101,14 @@ docker compose down           # data stays in the named volume "pgdata"
 
 The database port is not published; only the app can reach it.
 
+**The image.** Multi-stage build: `golang:1.25-alpine` compiles a static
+binary (`CGO_ENABLED=0`, `-ldflags "-s -w"`), the runtime stage is `FROM scratch`
+with only that binary, running as uid/gid `65532` (about 13 MB in total).
+scratch is used instead of `gcr.io/distroless` because gcr.io is often
+unreachable from Iran. scratch has no shell and no curl, so the Docker
+`HEALTHCHECK` and the compose healthcheck call the binary itself:
+`/minibank -healthcheck`.
+
 ### 3. Kubernetes on kind
 
 ```bash
@@ -115,6 +123,21 @@ scripts/smoke.sh http://localhost:8080        # in a second terminal
 ```
 
 minikube: `minikube image load minibank:v1` instead of `kind load`.
+
+**Probes.** Three different questions:
+
+| Probe | Path | Question | On failure |
+|---|---|---|---|
+| `startupProbe` | `/healthz` every 2 s, 30 tries | has the process finished starting? | restart after ~60 s |
+| `livenessProbe` | `/healthz` | is the process still alive? (never touches the DB) | restart the container |
+| `readinessProbe` | `/readyz` (pings Postgres, 2 s timeout; probe timeout 3 s) | can it serve traffic now? | removed from the Service, not restarted |
+
+The app connects to Postgres (retrying) *before* it starts listening. On a
+fresh `kubectl apply -f k8s/` Postgres often needs 30–60 s, and without a
+startup probe the liveness probe killed the app pods while they were still
+waiting for the database (CrashLoopBackOff). The startup probe gives them up
+to 60 s; liveness only starts once it has succeeded. A later database outage
+only makes `/readyz` fail: the pods stop receiving traffic but keep running.
 
 **PVC vs emptyDir.** Postgres uses a 1 Gi PersistentVolumeClaim, so accounts
 survive a postgres pod restart. An `emptyDir` would be simpler but is deleted
