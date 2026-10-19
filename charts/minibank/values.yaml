@@ -1,0 +1,56 @@
+# Default values for the minibank chart.
+#   helm install minibank charts/minibank -n minibank --create-namespace
+#   helm upgrade minibank charts/minibank -n minibank --set replicaCount=3
+
+replicaCount: 2
+
+image:
+  repository: minibank
+  tag: v1 # pinned, never "latest"
+  pullPolicy: IfNotPresent
+
+service:
+  port: 80
+
+containerPort: 8080
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    cpu: 500m
+    memory: 128Mi
+
+# Non-secret app configuration (rendered into the ConfigMap).
+config:
+  store: postgres
+
+postgres:
+  # false → bring your own database and set externalDatabaseURL.
+  enabled: true
+  image: postgres:16-alpine
+  database: minibank
+  user: minibank
+  # Demo default for a local cluster. Override it:
+  #   --set postgres.password="$(openssl rand -hex 16)"
+  password: minibank-dev-password
+  persistence:
+    # false → emptyDir: data is lost whenever the postgres pod restarts.
+    enabled: true
+    size: 1Gi
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# Used only when postgres.enabled is false.
+externalDatabaseURL: ""
+
+ingress:
+  enabled: false
+  className: nginx
+  host: minibank.local
