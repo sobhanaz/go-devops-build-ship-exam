@@ -45,5 +45,6 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/links/{code}", s.deleteLink)
 	mux.HandleFunc("GET /{code}", s.redirect)
 
-	return mux
+	// Outermost first: the logger sees the 500 written by the recoverer.
+	return s.logRequests(s.recoverPanics(mux))
 }
