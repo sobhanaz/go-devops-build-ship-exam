@@ -14,6 +14,7 @@ import (
 type Server struct {
 	store   store.Store
 	logger  *slog.Logger
+	metrics *metrics
 	mux     *http.ServeMux
 	handler http.Handler
 }
@@ -21,16 +22,18 @@ type Server struct {
 // New builds the router and the middleware chain around st.
 func New(st store.Store, logger *slog.Logger) *Server {
 	s := &Server{
-		store:  st,
-		logger: logger,
-		mux:    http.NewServeMux(),
+		store:   st,
+		logger:  logger,
+		metrics: newMetrics(),
+		mux:     http.NewServeMux(),
 	}
 	s.routes()
 
-	// Outermost first: the request log sees the final status, including the
-	// 500 written by recoverPanics.
+	// Outermost first: the request log and the metrics see the final status,
+	// including the 500 written by recoverPanics.
 	var h http.Handler = s.mux
 	h = recoverPanics(logger, h)
+	h = s.metrics.instrument(routeLabel(s.mux), h)
 	h = logRequests(logger, h)
 	s.handler = h
 	return s
@@ -39,6 +42,7 @@ func New(st store.Store, logger *slog.Logger) *Server {
 func (s *Server) routes() {
 	s.mux.HandleFunc("GET /healthz", s.handleHealthz)
 	s.mux.HandleFunc("GET /readyz", s.handleReadyz)
+	s.mux.Handle("GET /metrics", s.metrics.handler())
 
 	s.mux.HandleFunc("POST /accounts", s.handleCreateAccount)
 	s.mux.HandleFunc("GET /accounts", s.handleListAccounts)

@@ -293,3 +293,29 @@ func TestPanicRecovery(t *testing.T) {
 		t.Fatalf("body = %s", r.body)
 	}
 }
+
+func TestMetricsUseRoutePatterns(t *testing.T) {
+	h := newTestServer(t)
+	a := createAccount(t, h, "Sara")
+	b := createAccount(t, h, "Reza")
+	do(t, h, http.MethodGet, fmt.Sprintf("/accounts/%d", a.ID), "")
+	do(t, h, http.MethodPost, "/transfers", fmt.Sprintf(`{"from":%d,"to":%d,"amount":5}`, a.ID, b.ID))
+
+	r := do(t, h, http.MethodGet, "/metrics", "")
+	if r.status != http.StatusOK {
+		t.Fatalf("metrics status = %d", r.status)
+	}
+	text := string(r.body)
+	for _, want := range []string{
+		`http_requests_total{method="GET",path="/accounts/{id}",status="200"} 1`,
+		`http_request_duration_seconds_bucket{method="POST",path="/accounts"`,
+		`minibank_transfers_total{result="insufficient_funds"} 1`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Errorf("metrics output misses %s", want)
+		}
+	}
+	if strings.Contains(text, fmt.Sprintf(`path="/accounts/%d"`, a.ID)) {
+		t.Error("raw ids must not be used as label values")
+	}
+}
