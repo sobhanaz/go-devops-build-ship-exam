@@ -1,0 +1,7 @@
+# Applied first (file prefix 00-) so every other object has its namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: minibank
+  labels:
+    app.kubernetes.io/part-of: minibank
