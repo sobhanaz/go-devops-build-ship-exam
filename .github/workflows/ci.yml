@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (gofmt, vet, race)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "These files are not gofmt-ed:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: go vet
+        run: go vet ./...
+      - name: go test -race
+        run: go test -race -count=1 ./...
+
+  integration:
+    name: integration (PostgreSQL)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: minibank
+          POSTGRES_PASSWORD: minibank
+          POSTGRES_DB: minibank
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U minibank"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: store tests against Postgres
+        env:
+          MINIBANK_TEST_DATABASE_URL: postgres://minibank:minibank@localhost:5432/minibank?sslmode=disable
+        run: go test -race -count=1 -run Postgres -v ./internal/store/
+
+  build:
+    name: docker build
+    needs: [test, integration]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker build
+        run: docker build -t minibank:${{ github.sha }} .
+      - name: image size must stay below 30 MB
+        run: |
+          size=$(docker image inspect minibank:${{ github.sha }} --format '{{.Size}}')
+          echo "image size: $((size / 1000000)) MB"
+          test "$size" -le 30000000
+      - name: container answers /healthz
+        run: |
+          docker run -d --name mb -e STORE=memory -p 8080:8080 minibank:${{ github.sha }}
+          for i in $(seq 1 20); do curl -fsS http://localhost:8080/healthz && exit 0; sleep 1; done
+          docker logs mb
+          exit 1
