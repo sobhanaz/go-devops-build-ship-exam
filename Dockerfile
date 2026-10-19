@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # ---- build stage: full Go toolchain (~250 MB), thrown away afterwards ----
-# Tag matches the `go` line in go.mod (official images set GOTOOLCHAIN=local,
-# so an older builder than go.mod would fail).
-FROM golang:1.22-alpine AS build
+# The builder must be at least the `go` version in go.mod (1.22 here); newer
+# is fine. Official images set GOTOOLCHAIN=local, so an OLDER one would fail.
+FROM golang:1.25-alpine AS build
 WORKDIR /src
 
 # Dependencies first: this layer is cached until go.mod/go.sum change,
