@@ -67,6 +67,7 @@ func (s *Server) createLink(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, r, err)
 		return
 	}
+	s.metrics.linksCreated.Inc()
 	writeJSON(w, http.StatusCreated, s.present(created))
 }
 
@@ -133,6 +134,7 @@ func (s *Server) redirect(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Location", target)
 	w.WriteHeader(http.StatusFound)
+	s.metrics.redirects.Inc()
 }
 
 // present adds the fields that are derived, not stored.
