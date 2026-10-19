@@ -1,0 +1,11 @@
+{
+  "name": "exam-pdf-builder",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "highlight.js": "11.10.0",
+    "marked": "14.1.4",
+    "marked-highlight": "2.2.1",
+    "puppeteer-core": "23.11.1"
+  }
+}
