@@ -1,0 +1,15 @@
+# Non-secret configuration, consumed by the app with envFrom.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: snaplink-config
+  namespace: snaplink
+data:
+  STORE: redis
+  REDIS_ADDR: redis:6379 # the "redis" Service below, same namespace
+  PORT: "8080"
+  # short_url = BASE_URL + "/" + code. http://localhost:8080 matches
+  #   kubectl -n snaplink port-forward svc/snaplink 8080:80
+  # so the links you get back work in your browser. With the Ingress
+  # (40-ingress.yaml) set it to http://snaplink.local instead.
+  BASE_URL: http://localhost:8080

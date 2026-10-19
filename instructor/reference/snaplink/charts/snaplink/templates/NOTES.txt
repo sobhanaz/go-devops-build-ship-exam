@@ -1,0 +1,9 @@
+SnapLink {{ .Chart.AppVersion }} is installed in namespace {{ .Release.Namespace }}.
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "snaplink.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "snaplink.fullname" . }} 8080:{{ .Values.service.port }}
+  scripts/smoke.sh http://localhost:8080
+{{- if .Values.ingress.enabled }}
+
+Ingress: http://{{ .Values.ingress.host }} (add it to /etc/hosts)
+{{- end }}

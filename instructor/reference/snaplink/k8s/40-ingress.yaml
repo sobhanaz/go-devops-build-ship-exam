@@ -1,0 +1,25 @@
+# Bonus B2: expose SnapLink as http://snaplink.local through ingress-nginx.
+# Needs the ingress-nginx controller (kind: https://kind.sigs.k8s.io/docs/user/ingress/,
+# minikube: `minikube addons enable ingress`). Then add "127.0.0.1 snaplink.local"
+# to /etc/hosts and set BASE_URL in 10-configmap.yaml to http://snaplink.local.
+# Without a host port mapping you can still test it:
+#   kubectl -n ingress-nginx port-forward svc/ingress-nginx-controller 8081:80
+#   curl -H 'Host: snaplink.local' http://localhost:8081/healthz
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: snaplink
+  namespace: snaplink
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: snaplink.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: snaplink
+                port:
+                  name: http

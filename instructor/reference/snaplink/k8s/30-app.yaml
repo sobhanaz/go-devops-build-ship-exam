@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: snaplink
+  namespace: snaplink
+  labels:
+    app: snaplink
+spec:
+  # 2 replicas only works because all state lives in Redis. With STORE=memory
+  # each pod would have its own map: a link created via pod A is 404 on pod B.
+  replicas: 2
+  selector:
+    matchLabels:
+      app: snaplink
+  template:
+    metadata:
+      labels:
+        app: snaplink
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+      containers:
+        - name: snaplink
+          image: snaplink:v1 # pinned tag, loaded with: kind load docker-image snaplink:v1
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: snaplink-config
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: snaplink-redis
+                  key: REDIS_PASSWORD
+          # Liveness = "is the process alive?" /healthz never touches Redis, so a
+          # Redis outage does NOT make Kubernetes restart healthy app pods.
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+            failureThreshold: 3
+          # Readiness = "can I serve traffic?" /readyz pings Redis; 503 removes
+          # the pod from the Service endpoints until Redis is back.
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3 # /readyz may wait up to 2 s for the Redis PING
+            failureThreshold: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: snaplink
+  namespace: snaplink
+  labels:
+    app: snaplink
+spec:
+  type: ClusterIP
+  selector:
+    app: snaplink
+  ports:
+    - name: http
+      port: 80 # kubectl -n snaplink port-forward svc/snaplink 8080:80
+      targetPort: http
