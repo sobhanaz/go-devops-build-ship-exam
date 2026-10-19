@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (gofmt, vet, race)
+    runs-on: ubuntu-latest
+    # A throwaway Redis so the integration test runs in CI as well.
+    # Locally `go test ./...` skips it when SNAPLINK_TEST_REDIS_ADDR is unset.
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+
+      - name: gofmt (fails if any file is not formatted)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::run gofmt -w on these files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test -race
+        env:
+          SNAPLINK_TEST_REDIS_ADDR: localhost:6379
+        run: go test -race -count=1 ./...
+
+  build:
+    name: docker build + smoke test
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: docker build
+        run: docker build -t snaplink:${{ github.sha }} .
+
+      - name: image must be <= 30 MB
+        run: |
+          size=$(docker image inspect snaplink:${{ github.sha }} --format '{{.Size}}')
+          echo "image size: $((size / 1024 / 1024)) MB"
+          test "$size" -le $((30 * 1024 * 1024))
+
+      - name: smoke test the image (STORE=memory)
+        run: |
+          docker run -d --name snaplink -e STORE=memory -p 8080:8080 snaplink:${{ github.sha }}
+          scripts/smoke.sh http://localhost:8080
+
+      - name: container logs
+        if: always()
+        run: docker logs snaplink || true
