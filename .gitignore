@@ -1,0 +1,17 @@
+# binaries
+/bin/
+/minibank
+*.exe
+*.test
+
+# coverage
+*.out
+coverage.*
+
+# local configuration and secrets
+.env
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store
