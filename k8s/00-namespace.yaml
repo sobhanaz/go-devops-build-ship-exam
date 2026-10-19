@@ -1,0 +1,7 @@
+# Applied first (00-): every other object lives in this namespace.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: snaplink
+  labels:
+    app.kubernetes.io/part-of: snaplink
