@@ -113,10 +113,12 @@ func (s *Server) handleTransfer(w http.ResponseWriter, r *http.Request) {
 		Amount int64 `json:"amount"`
 	}
 	if err := decodeJSON(w, r, &req); err != nil {
+		s.metrics.observeTransfer(err)
 		s.fail(w, r, err)
 		return
 	}
 	tx, err := s.store.Transfer(r.Context(), req.From, req.To, req.Amount)
+	s.metrics.observeTransfer(err)
 	if err != nil {
 		s.fail(w, r, err)
 		return

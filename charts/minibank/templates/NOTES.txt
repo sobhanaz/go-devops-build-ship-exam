@@ -1,0 +1,10 @@
+MiniBank {{ .Chart.AppVersion }} is installed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+Try it:
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "minibank.fullname" . }}
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "minibank.fullname" . }} 8080:{{ .Values.service.port }}
+  scripts/smoke.sh http://localhost:8080
+{{- if .Values.ingress.enabled }}
+
+Ingress: http://{{ .Values.ingress.host }}/healthz  (needs ingress-nginx and an /etc/hosts entry)
+{{- end }}
