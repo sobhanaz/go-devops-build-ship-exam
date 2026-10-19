@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log/slog"
@@ -22,6 +23,12 @@ import (
 const shutdownTimeout = 10 * time.Second
 
 func main() {
+	healthcheck := flag.Bool("healthcheck", false, "GET /healthz on $PORT and exit 0 (healthy) or 1; for Docker HEALTHCHECK")
+	flag.Parse()
+	if *healthcheck {
+		os.Exit(probe(envOr(os.Getenv, "PORT", "8080")))
+	}
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 
 	cfg, err := loadConfig(os.Getenv)
