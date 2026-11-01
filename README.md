@@ -27,6 +27,7 @@
 | [`00-setup-checklist/`](00-setup-checklist/) | چک‌لیست آماده‌سازی (یک هفته قبل از آزمون) |
 | [`version-A-minibank/`](version-A-minibank/) | README و PLAN نسخه‌ی A |
 | [`version-B-snaplink/`](version-B-snaplink/) | README و PLAN نسخه‌ی B |
+| [`review-quiz/`](review-quiz/) | ۱۰ پرسش مرور بعد از آزمون (پاسخ‌نامه در `instructor/review-quiz/`) |
 | [`instructor/`](instructor/) | راهنمای مدرس، تصحیح‌گرهای خودکار، راه‌حل‌های مرجع و ابزار ساخت PDF |
 
 ## ✅ راه‌حل‌های مرجع
